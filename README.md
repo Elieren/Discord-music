@@ -3,6 +3,7 @@
 ### .env.example setup
 ```
 TOKEN = # Your discord bot token
+TOKEN_YANDEX =  # Your Yandex Music token
 ```
 
 ### Commands for bot

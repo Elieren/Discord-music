@@ -7,10 +7,14 @@ from discord.utils import get
 from discord import FFmpegPCMAudio
 from youtube_dl import YoutubeDL
 from pytube import YouTube
+import re
+from yandex_music import Client
+
 
 load_dotenv()
 
 TOKEN = os.environ['TOKEN']
+TOKEN_YANDEX = os.environ['TOKEN_YANDEX']
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -69,17 +73,51 @@ def play_track(ctx, url):
 
     voice = get(bot.voice_clients, guild=ctx.guild)
 
+    youtube_regex = r"(youtube\.com|youtu\.be)"
+    yandex_regex = r"music\.yandex\.ru"
+
     if not voice.is_playing():
-        with YoutubeDL(YDL_OPTIONS) as ydl:
-            info = ydl.extract_info(url, download=False)
-        URL = info['formats'][0]['url']
-        voice.play(
-            discord.PCMVolumeTransformer(
-                FFmpegPCMAudio(URL, **FFMPEG_OPTIONS)
-            ),
-            after=lambda e: play_next(ctx))
-        voice.is_playing()
-        ctx.guild.voice_client.source.volume = volume
+        if re.search(youtube_regex, url):
+            with YoutubeDL(YDL_OPTIONS) as ydl:
+                info = ydl.extract_info(url, download=False)
+            URL = info['formats'][0]['url']
+            voice.play(
+                discord.PCMVolumeTransformer(
+                    FFmpegPCMAudio(URL, **FFMPEG_OPTIONS)
+                ),
+                after=lambda e: play_next(ctx))
+            voice.is_playing()
+            ctx.guild.voice_client.source.volume = volume
+        elif re.search(yandex_regex, url):
+            match = re.search(r'/album/(\d+)/track/(\d+)', url)
+
+            if match:
+                album_id, track_id = match.groups()
+                formatted_string = f"{track_id}:{album_id}"
+
+                client = Client(TOKEN_YANDEX)
+                client.init()
+
+                track = client.tracks(formatted_string)[0]
+
+                del client
+
+                try:
+                    _ = track.download_bytes()
+                    URL = track.download_info[0].direct_link
+                except Exception as e:
+                    ctx.send(f"Ошибка при загрузке аудио: {e}")
+
+                voice.play(
+                    discord.PCMVolumeTransformer(
+                        FFmpegPCMAudio(URL, **FFMPEG_OPTIONS)
+                    ),
+                    after=lambda e: play_next(ctx))
+                voice.is_playing()
+                ctx.guild.voice_client.source.volume = volume
+            else:
+                ctx.send(
+                    "Не удалось найти идентификаторы альбома и трека в URL")
     else:
         ctx.send("Уже проигрывается песня")
         return
@@ -105,13 +143,35 @@ def play_next(ctx):
 
 
 async def info(ctx):
+
+    youtube_regex = r"(youtube\.com|youtu\.be)"
+    yandex_regex = r"music\.yandex\.ru"
+
     # Получите информацию о треках для текущего канала
     channel_track_inform = track_inform.get(ctx.channel.id, [])
     information = []
     if channel_track_inform != []:
         for x, url in enumerate(channel_track_inform):
-            yt = YouTube(url)
-            information.append(f'#{x+1}: {yt.title} - {yt.author}')
+            if re.search(youtube_regex, url):
+                yt = YouTube(url)
+                information.append(f'#{x+1}: {yt.title} - {yt.author}')
+            elif re.search(yandex_regex, url):
+                match = re.search(r'/album/(\d+)/track/(\d+)', url)
+
+                if match:
+                    album_id, track_id = match.groups()
+                    formatted_string = f"{track_id}:{album_id}"
+
+                    client = Client(TOKEN_YANDEX)
+                    client.init()
+
+                    track = client.tracks(formatted_string)[0]
+                    artist = track.artists_name()
+                    artist = ', '.join(artist)
+
+                    del client
+                    information.append(
+                        f'#{x+1}: {track.title} - {artist}')
     else:
         information.append("Not track in list")
 

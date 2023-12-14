@@ -8,7 +8,8 @@ from discord import FFmpegPCMAudio
 from youtube_dl import YoutubeDL
 from pytube import YouTube
 import re
-from yandex_music import Client
+from yandex_music import ClientAsync
+import asyncio
 
 
 load_dotenv()
@@ -33,11 +34,7 @@ async def join(ctx):
     await channel.connect()
 
 
-@bot.command()
-async def play(ctx, url):
-    voice_client = ctx.guild.voice_client
-    # Получите очередь для текущего канала или создайте новую
-    channel_queue = queue.get(ctx.channel.id, [])
+async def other(ctx, url, voice_client, channel_queue):
     if voice_client.is_playing():
         channel_queue.append(url)
         queue[ctx.channel.id] = channel_queue
@@ -55,10 +52,164 @@ async def play(ctx, url):
         channel_track_inform = track_inform.get(ctx.channel.id, [])
         channel_track_inform.append(url)
         track_inform[ctx.channel.id] = channel_track_inform
-        play_track(ctx, url)
+        await play_track(ctx, url)
 
 
-def play_track(ctx, url):
+async def album_yandex(ctx, url, voice_client, channel_queue):
+    pattern = r'https://music\.yandex\.ru/album/(\d+)$'
+
+    # Используем регулярное выражение для извлечения
+    # идентификатора альбома из URL
+    match = re.match(pattern, url)
+
+    # Если URL соответствует шаблону, то выводим идентификатор альбома
+    if match:
+        message = await ctx.channel.fetch_message(ctx.channel.last_message_id)
+        await message.add_reaction("🔥")
+        album_id = match.group(1)
+        client = ClientAsync(TOKEN_YANDEX)
+        await client.init()
+
+        album = await client.albums_with_tracks(album_id)
+
+        del client
+
+        track = []
+
+        for i in album.volumes[0]:
+            track.append(
+                f"https://music.yandex.ru/album/{album_id}/track/{i['id']}")
+
+        for i in track:
+            if voice_client.is_playing():
+                channel_queue.append(i)
+                queue[ctx.channel.id] = channel_queue
+                # queue.append(i)
+                # Получите информацию о треках для текущего канала
+                # или создайте новую
+                channel_track_inform = track_inform.get(ctx.channel.id, [])
+                channel_track_inform.append(i)
+                track_inform[ctx.channel.id] = channel_track_inform
+            else:
+                # Получите информацию о треках для текущего канала
+                # или создайте новую
+                channel_track_inform = track_inform.get(ctx.channel.id, [])
+                channel_track_inform.append(i)
+                track_inform[ctx.channel.id] = channel_track_inform
+                await play_track(ctx, i)
+    else:
+        ctx.send("Не верная ссылка на альбом.")
+
+
+async def playlist_yandex(ctx, url, voice_client, channel_queue):
+    pattern = r'https://music\.yandex\.ru/users/(.+)/playlists/(\d+)$'
+
+    match = re.match(pattern, url)
+
+    if match:
+        message = await ctx.channel.fetch_message(ctx.channel.last_message_id)
+        await message.add_reaction("❤️")
+        username = match.group(1)
+        playlist_id = match.group(2)
+
+        client = ClientAsync(TOKEN_YANDEX)
+        await client.init()
+
+        playlist = await client.users_playlists(playlist_id, username)
+
+        tracks = []
+
+        for i in playlist.tracks:
+            track = await client.tracks(i.id)
+            data = track[0].track_id.split(':')
+            tracks.append(
+                f"https://music.yandex.ru/album/{data[1]}/track/{data[0]}")
+
+        del client
+
+        for i in tracks:
+            if voice_client.is_playing():
+                channel_queue.append(i)
+                queue[ctx.channel.id] = channel_queue
+                # queue.append(i)
+                # Получите информацию о треках для текущего канала
+                # или создайте новую
+                channel_track_inform = track_inform.get(ctx.channel.id, [])
+                channel_track_inform.append(i)
+                track_inform[ctx.channel.id] = channel_track_inform
+            else:
+                # Получите информацию о треках для текущего канала
+                # или создайте новую
+                channel_track_inform = track_inform.get(ctx.channel.id, [])
+                channel_track_inform.append(i)
+                track_inform[ctx.channel.id] = channel_track_inform
+                await play_track(ctx, i)
+
+    else:
+        ctx.send("Не верная ссылка на плейлист.")
+
+
+async def playlist_youtube(ctx, url, voice_client, channel_queue):
+    video_urls = []
+
+    message = await ctx.channel.fetch_message(ctx.channel.last_message_id)
+    await message.add_reaction("❤️‍🔥")
+
+    ydl_opts = {
+        'quiet': True,
+        'extract_flat': True,
+    }
+
+    with YoutubeDL(ydl_opts) as ydl:
+        info_dict = ydl.extract_info(url, download=False)
+        if 'entries' in info_dict:
+            video_info = info_dict['entries']
+            for video in video_info:
+                video_urls.append(
+                    f'https://www.youtube.com/watch?v={video["id"]}')
+
+    for i in video_urls:
+        if voice_client.is_playing():
+            channel_queue.append(i)
+            queue[ctx.channel.id] = channel_queue
+            # queue.append(i)
+            # Получите информацию о треках для текущего канала
+            # или создайте новую
+            channel_track_inform = track_inform.get(ctx.channel.id, [])
+            channel_track_inform.append(i)
+            track_inform[ctx.channel.id] = channel_track_inform
+        else:
+            # Получите информацию о треках для текущего канала
+            # или создайте новую
+            channel_track_inform = track_inform.get(ctx.channel.id, [])
+            channel_track_inform.append(i)
+            track_inform[ctx.channel.id] = channel_track_inform
+            await play_track(ctx, i)
+
+
+@bot.command()
+async def play(ctx, url):
+    voice_client = ctx.guild.voice_client
+    # Получите очередь для текущего канала или создайте новую
+    channel_queue = queue.get(ctx.channel.id, [])
+    pattern = r'https://music\.yandex\.ru/album/(\d+)$'
+    pattern1 = r'https://music\.yandex\.ru/users/.+/playlists/\d+$'
+    pattern2 = (
+        r'(https?://)?(www\.)?(youtube\.com|youtu\.?be)'
+        r'/playlist\?list=[^&]+'
+    )
+
+    if re.match(pattern, url):
+        await album_yandex(ctx, url, voice_client, channel_queue)
+    elif re.match(pattern1, url):
+        await playlist_yandex(ctx, url, voice_client, channel_queue)
+    elif re.match(pattern2, url):
+        await playlist_youtube(ctx, url, voice_client, channel_queue)
+    else:
+        await other(ctx, url, voice_client, channel_queue)
+
+
+async def play_track(ctx, url):
     YDL_OPTIONS = {'format': 'bestaudio', 'noplaylist': 'True'}
     FFMPEG_OPTIONS = {
         'before_options':
@@ -85,7 +236,7 @@ def play_track(ctx, url):
                 discord.PCMVolumeTransformer(
                     FFmpegPCMAudio(URL, **FFMPEG_OPTIONS)
                 ),
-                after=lambda e: play_next(ctx))
+                after=lambda e: asyncio.run(play_next(ctx)))
             voice.is_playing()
             ctx.guild.voice_client.source.volume = volume
         elif re.search(yandex_regex, url):
@@ -95,35 +246,36 @@ def play_track(ctx, url):
                 album_id, track_id = match.groups()
                 formatted_string = f"{track_id}:{album_id}"
 
-                client = Client(TOKEN_YANDEX)
-                client.init()
+                client = ClientAsync(TOKEN_YANDEX)
+                await client.init()
 
-                track = client.tracks(formatted_string)[0]
-
-                del client
+                track = await client.tracks(formatted_string)
 
                 try:
-                    _ = track.download_bytes()
-                    URL = track.download_info[0].direct_link
+                    track = await client.tracks_download_info(
+                        track[0].id, get_direct_links=True)
+                    URL = track[0].direct_link
                 except Exception as e:
-                    ctx.send(f"Ошибка при загрузке аудио: {e}")
+                    await ctx.send(f"Ошибка при загрузке аудио: {e}")
+
+                del client
 
                 voice.play(
                     discord.PCMVolumeTransformer(
                         FFmpegPCMAudio(URL, **FFMPEG_OPTIONS)
                     ),
-                    after=lambda e: play_next(ctx))
+                    after=lambda e: asyncio.run(play_next(ctx)))
                 voice.is_playing()
                 ctx.guild.voice_client.source.volume = volume
             else:
-                ctx.send(
+                await ctx.send(
                     "Не удалось найти идентификаторы альбома и трека в URL")
     else:
-        ctx.send("Уже проигрывается песня")
+        await ctx.send("Уже проигрывается песня")
         return
 
 
-def play_next(ctx):
+async def play_next(ctx):
     # Получите очередь для текущего канала
     try:
         channel_queue = queue[ctx.channel.id]
@@ -134,7 +286,7 @@ def play_next(ctx):
             # Обновите очередь в словаре после удаления трека
             queue[ctx.channel.id] = channel_queue
             track_inform[ctx.channel.id] = channel_track
-            play_track(ctx, next_track)
+            await play_track(ctx, next_track)
         else:
             channel_track.pop(0)
             track_inform[ctx.channel.id] = channel_track
@@ -162,16 +314,20 @@ async def info(ctx):
                     album_id, track_id = match.groups()
                     formatted_string = f"{track_id}:{album_id}"
 
-                    client = Client(TOKEN_YANDEX)
-                    client.init()
+                    client = ClientAsync(TOKEN_YANDEX)
+                    await client.init()
 
-                    track = client.tracks(formatted_string)[0]
-                    artist = track.artists_name()
-                    artist = ', '.join(artist)
+                    track = await client.tracks(formatted_string)
+
+                    artists = []
+
+                    for i in track[0].artists:
+                        artists.append(i.name)
+                    artist = ', '.join(artists)
 
                     del client
                     information.append(
-                        f'#{x+1}: {track.title} - {artist}')
+                        f'#{x+1}: {track[0].title} - {artist}')
     else:
         information.append("Not track in list")
 

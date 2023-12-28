@@ -23,6 +23,8 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 
 queue = {}
 track_inform = {}
+information_track = {}
+playlist_change = {}
 
 
 @bot.command()
@@ -189,6 +191,7 @@ async def playlist_youtube(ctx, url, voice_client, channel_queue):
 
 @bot.command()
 async def play(ctx, url):
+    global playlist_change
     voice_client = ctx.guild.voice_client
     # Получите очередь для текущего канала или создайте новую
     channel_queue = queue.get(ctx.channel.id, [])
@@ -198,6 +201,8 @@ async def play(ctx, url):
         r'(https?://)?(www\.)?(youtube\.com|youtu\.?be)'
         r'/playlist\?list=[^&]+'
     )
+
+    playlist_change[ctx.channel.id] = True
 
     if re.match(pattern, url):
         await album_yandex(ctx, url, voice_client, channel_queue)
@@ -277,19 +282,27 @@ async def play_track(ctx, url):
 
 async def play_next(ctx):
     # Получите очередь для текущего канала
+    global playlist_change
     try:
         channel_queue = queue[ctx.channel.id]
         channel_track = track_inform[ctx.channel.id]
+        channel_playlist = information_track[ctx.channel.id]
         if len(channel_queue) > 0:
             next_track = channel_queue.pop(0)
             channel_track.pop(0)
+            channel_playlist.pop(0)
             # Обновите очередь в словаре после удаления трека
             queue[ctx.channel.id] = channel_queue
             track_inform[ctx.channel.id] = channel_track
+            information_track[ctx.channel.id] = channel_playlist
+            playlist_change[ctx.channel.id] = False
             await play_track(ctx, next_track)
         else:
             channel_track.pop(0)
+            channel_playlist.pop(0)
+            playlist_change[ctx.channel.id] = False
             track_inform[ctx.channel.id] = channel_track
+            information_track[ctx.channel.id] = channel_playlist
     except Exception:
         pass
 
@@ -331,11 +344,14 @@ async def info(ctx):
     else:
         information.append("Not track in list")
 
-    return information
+    playlist_change[ctx.channel.id] = False
+
+    information_track[ctx.channel.id] = information
 
 
 @bot.command()
 async def interface(ctx):
+    global playlist_change
     Button1 = Button(label="Vol: + 10", style=discord.ButtonStyle.blurple,
                      row=0)
     Button2 = Button(label='Vol: - 10', style=discord.ButtonStyle.blurple,
@@ -350,6 +366,7 @@ async def interface(ctx):
     Button6 = Button(label='clean', style=discord.ButtonStyle.red, row=1)
 
     async def volume_plus_10(interaction):
+        global playlist_change
         voice_client = interaction.guild.voice_client
         if (voice_client.source.volume + 0.1) <= 2.0:
             x = voice_client.source.volume + 0.1
@@ -357,7 +374,9 @@ async def interface(ctx):
             # await interaction.response.send_message(
             #     voice_client.source.volume * 100)
 
-            text = await info(interaction)
+            if playlist_change[interaction.channel.id]:
+                await info(interaction)
+            text = information_track[ctx.channel.id]
             text = '\n'.join(text)
             text += f'\n\nVol: \
 {int(ctx.guild.voice_client.source.volume * 100)}'
@@ -368,6 +387,7 @@ async def interface(ctx):
             await interaction.response.defer()
 
     async def volume_minus_10(interaction):
+        global playlist_change
         voice_client = interaction.guild.voice_client
         if (voice_client.source.volume - 0.1) >= 0.0:
             x = voice_client.source.volume - 0.1
@@ -375,7 +395,9 @@ async def interface(ctx):
             # await interaction.response.send_message(
             #     voice_client.source.volume * 100)
 
-            text = await info(interaction)
+            if playlist_change[interaction.channel.id]:
+                await info(interaction)
+            text = information_track[ctx.channel.id]
             text = '\n'.join(text)
             text += f'\n\nVol: \
 {int(ctx.guild.voice_client.source.volume * 100)}'
@@ -386,6 +408,7 @@ async def interface(ctx):
             await interaction.response.defer()
 
     async def volume_plus_50(interaction):
+        global playlist_change
         voice_client = interaction.guild.voice_client
         if (voice_client.source.volume + 0.5) <= 2.0:
             x = voice_client.source.volume + 0.5
@@ -393,7 +416,9 @@ async def interface(ctx):
             # await interaction.response.send_message(
             #     voice_client.source.volume * 100)
 
-            text = await info(interaction)
+            if playlist_change[interaction.channel.id]:
+                await info(interaction)
+            text = information_track[ctx.channel.id]
             text = '\n'.join(text)
             text += f'\n\nVol: \
 {int(ctx.guild.voice_client.source.volume * 100)}'
@@ -404,6 +429,7 @@ async def interface(ctx):
             await interaction.response.defer()
 
     async def volume_minus_50(interaction):
+        global playlist_change
         voice_client = interaction.guild.voice_client
         if (voice_client.source.volume - 0.5) >= 0.0:
             x = voice_client.source.volume - 0.5
@@ -411,7 +437,9 @@ async def interface(ctx):
             # await interaction.response.send_message(
             #     voice_client.source.volume * 100)
 
-            text = await info(interaction)
+            if playlist_change[interaction.channel.id]:
+                await info(interaction)
+            text = information_track[ctx.channel.id]
             text = '\n'.join(text)
             text += f'\n\nVol: \
 {int(ctx.guild.voice_client.source.volume * 100)}'
@@ -475,11 +503,15 @@ async def interface(ctx):
             await interaction.response.defer()
 
     async def clean(interaction):
+        global playlist_change
         global queue
         global track_inform
-        queue = {}
-        track_inform = {}
-        text = await info(interaction)
+        queue[interaction.channel.id] = []
+        track_inform[interaction.channel.id] = []
+        information_track[interaction.channel.id] = ["Not track in list"]
+        if playlist_change[interaction.channel.id]:
+            await info(interaction)
+        text = information_track[ctx.channel.id]
         text = '\n'.join(text)
         text += f'\n\nVol: \
 {int(ctx.guild.voice_client.source.volume * 100)}'
@@ -505,7 +537,9 @@ async def interface(ctx):
     view.add_item(Button5)
     view.add_item(Button7)
     view.add_item(Button6)
-    text = await info(ctx)
+    if playlist_change[ctx.channel.id]:
+        await info(ctx)
+    text = information_track[ctx.channel.id]
     text = '\n'.join(text)
     text += f'\n\nVol: {int(ctx.guild.voice_client.source.volume * 100)}'
     await ctx.send(embed=discord.Embed(

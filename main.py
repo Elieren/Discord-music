@@ -353,10 +353,10 @@ async def info(ctx):
     channel_track_inform = track_inform.get(ctx.channel.id, [])
     information = []
     if channel_track_inform != []:
-        for x, url in enumerate(channel_track_inform):
+        for url in channel_track_inform:
             if re.search(youtube_regex, url):
                 yt = YouTube(url)
-                information.append(f'#{x+1}: {yt.title} - {yt.author}')
+                information.append(f'{yt.title} - {yt.author}')
             elif re.search(yandex_regex, url):
                 match = re.search(r'/album/(\d+)/track/(\d+)', url)
 
@@ -377,7 +377,7 @@ async def info(ctx):
 
                     del client
                     information.append(
-                        f'#{x+1}: {track[0].title} - {artist}')
+                        f'{track[0].title} - {artist}')
     else:
         information.append("Not track in list")
 

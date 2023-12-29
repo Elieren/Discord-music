@@ -10,6 +10,7 @@ from pytube import YouTube
 import re
 from yandex_music import ClientAsync
 import asyncio
+import random
 
 
 load_dotenv()
@@ -25,6 +26,30 @@ queue = {}
 track_inform = {}
 information_track = {}
 playlist_change = {}
+repeat_status = {}
+
+random.seed(1)
+
+# =============================================================================#
+Button1 = Button(label="Vol: + 10", style=discord.ButtonStyle.blurple,
+                 emoji='🔊',  row=0)
+Button2 = Button(label='Vol: - 10', style=discord.ButtonStyle.blurple,
+                 emoji='🔉',  row=0)
+Button3 = Button(label="Vol: + 50", style=discord.ButtonStyle.blurple,
+                 emoji='🔊',  row=0)
+Button4 = Button(label='Vol: - 50', style=discord.ButtonStyle.blurple,
+                 emoji='🔉',  row=0)
+Button5 = Button(label='pause', style=discord.ButtonStyle.green,
+                 emoji='⏸️', row=1)
+Button6 = Button(label='clean', style=discord.ButtonStyle.red,
+                 emoji='🧹', row=1)
+Button7 = Button(label='next', style=discord.ButtonStyle.grey,
+                 emoji='⏭️', row=1)
+Button8 = Button(label='repeat', style=discord.ButtonStyle.grey, emoji='🔁',
+                 row=2)
+Button9 = Button(label='mix', style=discord.ButtonStyle.grey, emoji='🔀',
+                 row=2)
+# =============================================================================#
 
 
 @bot.command()
@@ -33,6 +58,7 @@ async def join(ctx):
         await ctx.send("Вы не подключены к голосовому каналу!")
         return
     channel = ctx.author.voice.channel
+    repeat_status[ctx.channel.id] = 0
     await channel.connect()
 
 
@@ -54,7 +80,10 @@ async def other(ctx, url, voice_client, channel_queue):
         channel_track_inform = track_inform.get(ctx.channel.id, [])
         channel_track_inform.append(url)
         track_inform[ctx.channel.id] = channel_track_inform
-        await play_track(ctx, url)
+        channel_queue.append(url)
+        queue[ctx.channel.id] = channel_queue
+        await info(ctx)
+        await play_next(ctx, status=False)
 
 
 async def album_yandex(ctx, url, voice_client, channel_queue):
@@ -280,7 +309,7 @@ async def play_track(ctx, url):
         return
 
 
-async def play_next(ctx):
+async def play_next(ctx, status=True):
     # Получите очередь для текущего канала
     global playlist_change
     try:
@@ -288,9 +317,21 @@ async def play_next(ctx):
         channel_track = track_inform[ctx.channel.id]
         channel_playlist = information_track[ctx.channel.id]
         if len(channel_queue) > 0:
-            next_track = channel_queue.pop(0)
-            channel_track.pop(0)
-            channel_playlist.pop(0)
+            if repeat_status[ctx.channel.id] == 0:
+                if status:
+                    channel_queue.pop(0)
+                    channel_track.pop(0)
+                    channel_playlist.pop(0)
+                    next_track = channel_queue.pop(0)
+                else:
+                    next_track = channel_queue[0]
+            elif repeat_status[ctx.channel.id] == 1:
+                channel_queue.append(channel_queue.pop(0))
+                channel_track.append(channel_track.pop(0))
+                channel_playlist.append(channel_playlist.pop(0))
+                next_track = channel_queue[0]
+            elif repeat_status[ctx.channel.id] == 2:
+                next_track = channel_queue[0]
             # Обновите очередь в словаре после удаления трека
             queue[ctx.channel.id] = channel_queue
             track_inform[ctx.channel.id] = channel_track
@@ -298,11 +339,7 @@ async def play_next(ctx):
             playlist_change[ctx.channel.id] = False
             await play_track(ctx, next_track)
         else:
-            channel_track.pop(0)
-            channel_playlist.pop(0)
-            playlist_change[ctx.channel.id] = False
-            track_inform[ctx.channel.id] = channel_track
-            information_track[ctx.channel.id] = channel_playlist
+            pass
     except Exception:
         pass
 
@@ -352,18 +389,8 @@ async def info(ctx):
 @bot.command()
 async def interface(ctx):
     global playlist_change
-    Button1 = Button(label="Vol: + 10", style=discord.ButtonStyle.blurple,
-                     row=0)
-    Button2 = Button(label='Vol: - 10', style=discord.ButtonStyle.blurple,
-                     row=0)
-    Button3 = Button(label="Vol: + 50", style=discord.ButtonStyle.blurple,
-                     row=0)
-    Button4 = Button(label='Vol: - 50', style=discord.ButtonStyle.blurple,
-                     row=0)
-    Button5 = Button(label='pause', style=discord.ButtonStyle.green,
-                     emoji='⏸️', row=1)
-    Button7 = Button(label='next', style=discord.ButtonStyle.grey, row=1)
-    Button6 = Button(label='clean', style=discord.ButtonStyle.red, row=1)
+    global Button1, Button2, Button3, Button4, Button5, Button6, Button7, \
+        Button8, Button9
 
     async def volume_plus_10(interaction):
         global playlist_change
@@ -450,6 +477,8 @@ async def interface(ctx):
             await interaction.response.defer()
 
     async def pause(interaction):
+        global Button1, Button2, Button3, Button4, Button5, Button6, Button7, \
+            Button8, Button9
         voice_client = interaction.guild.voice_client
         if interaction.message.components[1].children[0].emoji.name == '⏸️':
             Button5 = Button(label='resume', style=discord.ButtonStyle.green,
@@ -462,8 +491,10 @@ async def interface(ctx):
             view.add_item(Button2)
             view.add_item(Button4)
             view.add_item(Button5)
-            view.add_item(Button7)
             view.add_item(Button6)
+            view.add_item(Button7)
+            view.add_item(Button8)
+            view.add_item(Button9)
 
             await interaction.message.edit(view=view)
             if voice_client is None:
@@ -484,8 +515,10 @@ async def interface(ctx):
             view.add_item(Button2)
             view.add_item(Button4)
             view.add_item(Button5)
-            view.add_item(Button7)
             view.add_item(Button6)
+            view.add_item(Button7)
+            view.add_item(Button8)
+            view.add_item(Button9)
 
             await interaction.message.edit(view=view)
             if voice_client is None:
@@ -521,13 +554,111 @@ async def interface(ctx):
                 description=text, color=discord.Color.red()), view=view)
         await interaction.response.defer()
 
+    async def repeat(interaction):
+        global Button1, Button2, Button3, Button4, Button5, Button6, Button7, \
+            Button8, Button9
+        if (interaction.message.components[2].children[0].style.value == 2
+           and interaction.message.components[2].children[0].emoji.name ==
+           '🔁'):
+            Button8 = Button(label='repeat', style=discord.ButtonStyle.green,
+                             emoji='🔁', row=2)
+
+            repeat_status[interaction.channel.id] = 1
+
+        elif (interaction.message.components[2].children[0].style.value == 3
+              and interaction.message.components[2].children[0].emoji.name ==
+              '🔁'):
+            Button8 = Button(label='repeat', style=discord.ButtonStyle.green,
+                             emoji='🔂', row=2)
+
+            repeat_status[interaction.channel.id] = 2
+
+        elif (interaction.message.components[2].children[0].style.value == 3
+              and interaction.message.components[2].children[0].emoji.name ==
+              '🔂'):
+            Button8 = Button(label='repeat', style=discord.ButtonStyle.grey,
+                             emoji='🔁', row=2)
+
+            repeat_status[interaction.channel.id] = 0
+
+        Button8.callback = repeat
+
+        view = View()
+        view.add_item(Button3)
+        view.add_item(Button1)
+        view.add_item(Button2)
+        view.add_item(Button4)
+        view.add_item(Button5)
+        view.add_item(Button6)
+        view.add_item(Button7)
+        view.add_item(Button8)
+        view.add_item(Button9)
+
+        await interaction.message.edit(view=view)
+        await interaction.response.defer()
+
+    async def mix(interaction):
+        global Button1, Button2, Button3, Button4, Button5, Button6, Button7, \
+            Button8, Button9
+
+        channel_queue = queue[interaction.channel.id]
+        channel_track = track_inform[interaction.channel.id]
+        channel_playlist = information_track[interaction.channel.id]
+
+        random_gen1 = random.Random(1)
+        random_gen2 = random.Random(1)
+        random_gen3 = random.Random(1)
+
+        first_element1 = channel_queue[0]
+        first_element2 = channel_track[0]
+        first_element3 = channel_playlist[0]
+
+        rest_of_list1 = channel_queue[1:]
+        rest_of_list2 = channel_track[1:]
+        rest_of_list3 = channel_playlist[1:]
+
+        random_gen1.shuffle(rest_of_list1)
+        random_gen2.shuffle(rest_of_list2)
+        random_gen3.shuffle(rest_of_list3)
+
+        # Возвращаем первые элементы на их места
+        queue[interaction.channel.id] = [first_element1] + rest_of_list1
+        track_inform[interaction.channel.id] = [first_element2] + rest_of_list2
+        information_track[interaction.channel.id] = [first_element3] +\
+            rest_of_list3
+
+        if playlist_change[interaction.channel.id]:
+            await info(interaction)
+        text = information_track[interaction.channel.id]
+        text = '\n'.join(text)
+        text += f'\n\nVol: \
+{int(ctx.guild.voice_client.source.volume * 100)}'
+
+        view = View()
+        view.add_item(Button3)
+        view.add_item(Button1)
+        view.add_item(Button2)
+        view.add_item(Button4)
+        view.add_item(Button5)
+        view.add_item(Button6)
+        view.add_item(Button7)
+        view.add_item(Button8)
+        view.add_item(Button9)
+
+        await interaction.message.edit(
+            embed=discord.Embed(
+                description=text, color=discord.Color.red()), view=view)
+        await interaction.response.defer()
+
     Button1.callback = volume_plus_10
     Button2.callback = volume_minus_10
     Button3.callback = volume_plus_50
     Button4.callback = volume_minus_50
     Button5.callback = pause
-    Button7.callback = next_track
     Button6.callback = clean
+    Button7.callback = next_track
+    Button8.callback = repeat
+    Button9.callback = mix
 
     view = View()
     view.add_item(Button3)
@@ -535,8 +666,11 @@ async def interface(ctx):
     view.add_item(Button2)
     view.add_item(Button4)
     view.add_item(Button5)
-    view.add_item(Button7)
     view.add_item(Button6)
+    view.add_item(Button7)
+    view.add_item(Button8)
+    view.add_item(Button9)
+
     if playlist_change[ctx.channel.id]:
         await info(ctx)
     text = information_track[ctx.channel.id]
